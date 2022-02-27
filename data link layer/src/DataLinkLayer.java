@@ -264,7 +264,7 @@ public abstract class DataLinkLayer {
     public static final int     BITS_PER_BYTE = 8;
 
     /** Whether to emit debugging information. */
-    public static boolean debug         = false;
+    public static final boolean debug         = false;
     // =========================================================================
 
 

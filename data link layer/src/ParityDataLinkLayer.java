@@ -12,7 +12,6 @@ public class ParityDataLinkLayer extends DataLinkLayer {
 
     @Override
     protected byte[] createFrame(byte[] data) {
-        debug = false;
         // TODO Auto-generated method stub
         Queue<Byte> framingData = new LinkedList<Byte>(); // Create queue of frames
 

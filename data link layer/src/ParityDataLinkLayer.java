@@ -4,17 +4,19 @@ import java.util.Queue;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-public class ParityDataLinkLayer extends DataLinkLayer{
+public class ParityDataLinkLayer extends DataLinkLayer {
     // The start tag, stop tag, and the escape tag.
-    private static final byte startTag  = (byte)'{';
-    private static final byte stopTag   = (byte)'}';
-    private static final byte escapeTag = (byte)'\\';
+    private static final byte startTag = (byte) '{';
+    private static final byte stopTag = (byte) '}';
+    private static final byte escapeTag = (byte) '\\';
 
     @Override
     protected byte[] createFrame(byte[] data) {
+        debug = false;
         // TODO Auto-generated method stub
         Queue<Byte> framingData = new LinkedList<Byte>(); // Create queue of frames
-        
+
+        //System.out.println("<start>");
         framingData.add(startTag); // add start tag
         int numOnesInFrame = 0; // keeps track of number of ones in the frame
 
@@ -23,22 +25,39 @@ public class ParityDataLinkLayer extends DataLinkLayer{
 
             if (data[i] == startTag || data[i] == escapeTag || data[i] == stopTag) { // check if we need an escape tag
                 framingData.add(escapeTag); // add escape tag
+                numOnesInFrame -= Integer.bitCount(data[i] & 0xff); // don't include escape tag in parity.
             }
+            // System.out.printf("%c", data[i]);
+            // System.out.printf("%d%n", numOnesInFrame);
 
             framingData.add(data[i]); // add data to the frame
 
-            if ((i+1)%8 == 0){ // ensure every frame is only 8 bytes long
+            if ((i + 1) % 8 == 0) { // ensure every frame is only 8 bytes long
                 byte parityByte = (byte) (numOnesInFrame % 2); // find parity
-                framingData.add(stopTag); // add stop tag
+                // System.out.printf("%d%n", parityByte);
+                // System.out.printf("<stop>%n");
                 framingData.add(parityByte); // add parity byte
-                framingData.add(startTag);
+                framingData.add(stopTag); // add stop tag
+                framingData.add(startTag); // add start tag
+                // System.out.printf("<start>%n");
+                numOnesInFrame = 0;
+
             }
         }
 
+        if (framingData.size() != 0) {
+            // System.out.println("Handling remainder of frame");
+            framingData.add((byte) (numOnesInFrame % 2)); // add parity byte
+            // System.out.printf("%d%n", (byte) (numOnesInFrame % 2) );
+
+            framingData.add(stopTag);
+            // System.out.printf("<stop>%n");
+        }
         // convert framed data queue to byte array
+
         byte[] framedData = new byte[framingData.size()];
-        Iterator<Byte>  i = framingData.iterator();
-        int             j = 0;
+        Iterator<Byte> i = framingData.iterator();
+        int j = 0;
         while (i.hasNext()) {
             framedData[j++] = i.next();
         }
@@ -46,133 +65,143 @@ public class ParityDataLinkLayer extends DataLinkLayer{
     }
 
     @Override
-    protected byte[] processFrame () {
+    protected byte[] processFrame() {
+
         Logger logger = Logger.getLogger("ProcessFrame");
 
-        // Search for a start tag.  Discard anything prior to it.
-        boolean        startTagFound = false;
-        Iterator<Byte>             i = byteBuffer.iterator();
+        // Search for a start tag. Discard anything prior to it.
+        boolean startTagFound = false;
+        Iterator<Byte> i = byteBuffer.iterator();
         while (!startTagFound && i.hasNext()) {
             byte current = i.next();
             if (current != startTag) {
-            i.remove();
+                i.remove();
             } else {
-            startTagFound = true;
+                startTagFound = true;
             }
         }
-    
+
         // If there is no start tag, then there is no frame.
         if (!startTagFound) {
-            logger.log(Level.SEVERE, "no start tag found");
+            logger.log(Level.WARNING, "NO START TAG FOUND. NO FRAME FOUND");
             return null;
         }
         int numOnesInFrame = 0;
         // Try to extract data while waiting for an unescaped stop tag.
         Queue<Byte> extractedBytes = new LinkedList<Byte>();
-        boolean       stopTagFound = false;
+        boolean stopTagFound = false;
         int byteCount = 0; // keeps track of the number of bytes that have been processed
         while (!stopTagFound && i.hasNext()) {
-    
-            // Grab the next byte.  If it is...
-            //   (a) An escape tag: Skip over it and grab what follows as
-            //                      literal data.
-            //   (b) A stop tag:    Remove all processed bytes from the buffer and
-            //                      end extraction.
-            //   (c) A start tag:   All that precedes is damaged, so remove it
-            //                      from the buffer and restart extraction.
-            //   (d) Otherwise:     Take it as literal data.
+
+            // Grab the next byte. If it is...
+            // (a) An escape tag: Skip over it and grab what follows as
+            // literal data.
+            // (b) A stop tag: Remove all processed bytes from the buffer and
+            // end extraction.
+            // (c) A start tag: All that precedes is damaged, so remove it
+            // from the buffer and restart extraction.
+            // (d) Otherwise: Take it as literal data.
             byte current = i.next();
             if (current == escapeTag) {
-            if (i.hasNext()) {
-                current = i.next();
+                if (i.hasNext()) {
+                    current = i.next(); // current = the byte after the escape tag.
+                    if (byteCount > 8 && current != stopTag) { // checks that frame is only 8 bytes long
+                        logger.log(Level.SEVERE, "FRAME GREATER THAN 8 BYTES"); // log error
+                        return null; // return null
+                    }
+                    extractedBytes.add(current); // add currentByte to extractedBytes
+                    numOnesInFrame += Integer.bitCount(current & 0xff);
+                    byteCount++; // increment byte counter.
+
+                } else {
+                    // An escape was the last byte available, so this is not a
+                    // complete frame.
+                    logger.log(Level.SEVERE, "INCOMPLETE FRAME");
+                    return null;
+                }
+            } else if (current == stopTag) {
+                cleanBufferUpTo(i);
+                stopTagFound = true;
+            } else if (current == startTag) {
+                // data is messed up
+                logger.log(Level.SEVERE, "NO STOP TAG FOUND, DATA MESSED UP, DROPPING FRAME.");
+                cleanBufferUpTo(i);
+                extractedBytes = new LinkedList<Byte>();
+            } else {
                 if (byteCount > 8 && current != stopTag) { // checks that frame is only 8 bytes long
-                    logger.log(Level.SEVERE, "Frame more than 8 bytes"); // log error
+                    logger.log(Level.SEVERE, "FRAME MORE THAN 8 BYTES"); // log error
                     return null; // return null
                 }
-                extractedBytes.add(current);
+                extractedBytes.add(current); // add data to extracted bytes
                 numOnesInFrame += Integer.bitCount(current & 0xff);
-                byteCount++; // increment byte counter.
+                byteCount++; // increment byte counter
+            }
 
-            } else {
-                // An escape was the last byte available, so this is not a
-                // complete frame.
-                logger.log(Level.SEVERE, "Incomplete Frame");
+        }
+        if (stopTagFound) {
+            byte[] extractedBytesArr = new byte[extractedBytes.size() - 1]; // create an array that's one less in length  than extracted bytes
+            Iterator<Byte> iter = extractedBytes.iterator(); // iterate through extracted bytes
+            int countNumOnesInFrame = 0;
+            for (int j = 0; j < extractedBytesArr.length; j++) { // fill array
+                extractedBytesArr[j] = iter.next();
+                countNumOnesInFrame += Integer.bitCount(extractedBytesArr[j] & 0xff);
+                // System.out.printf("%c", extractedBytesArr[j]);
+                // System.out.printf("%d%n", numOnesInFrame);
+            }
+
+            byte parityByte = iter.next(); // parityByte would be the only remaining byte
+            byte calculatedParityByte = (byte) (countNumOnesInFrame % 2); // the parity byte calculated from the received
+                                                                     // data
+
+            if (calculatedParityByte != parityByte) {
+                // check that parities match
+                // logger.log(Level.SEVERE, "Calculated Parity: " + (int)calculatedParityByte + " Parity in Frame: " + (int)parityByte);
+                logger.log(Level.SEVERE, "PARITIES MISMATCH");
                 return null;
             }
-            } else if (current == stopTag) {
-            cleanBufferUpTo(i);
-            stopTagFound = true;
-            } else if (current == startTag) {
-            cleanBufferUpTo(i);
-            extractedBytes = new LinkedList<Byte>();
-            } else {
-                
-            if (byteCount > 8 && current != stopTag) { // checks that frame is only 8 bytes long
-                logger.log(Level.SEVERE, "Frame more than 8 bytes"); // log error
-                return null; // return null
-            }
-            extractedBytes.add(current);
-            numOnesInFrame += Integer.bitCount(current & 0xff);
-            byteCount++; // increment byte counter
-            }
-    
         }
-    
         // If there is no stop tag, then the frame is incomplete.
-        if (!stopTagFound) {
-            logger.log(Level.SEVERE, "no stop tag found");
+        else {
+            logger.log(Level.FINE, "NO STOP TAG FOUND");
             return null;
         }
 
-        if (stopTagFound) { // if there is a stop tag, we get the parityByte.
-            byte parityByte = i.next();
-            byte calculatedParityByte = (byte) (numOnesInFrame %2);
-            if (parityByte != calculatedParityByte) { // compare parity bits and ensure they work
-                logger.log(Level.SEVERE, "parity bits mismatch");
-                return null;
-            }
-        }
-    
         // Convert to the desired byte array.
         if (debug) {
             System.out.println("DumbDataLinkLayer.processFrame(): Got whole frame!");
         }
-        byte[] extractedData = new byte[extractedBytes.size()];
-        int                j = 0;
+        byte[] extractedData = new byte[extractedBytes.size()-1];
+        int j = 0;
         i = extractedBytes.iterator();
-        while (i.hasNext()) {
+        while (i.hasNext() && j < extractedData.length) {
             extractedData[j] = i.next();
             if (debug) {
-            System.out.printf("DumbDataLinkLayer.processFrame():\tbyte[%d] = %c\n",
-                      j,
-                      extractedData[j]);
+                System.out.printf("DumbDataLinkLayer.processFrame():\tbyte[%d] = %c\n",
+                        j,
+                        extractedData[j]);
             }
             j += 1;
         }
-    
+
         return extractedData;
-    
-        } // processFrame ()
-        // ===============================================================
-    
-    
-    
-        // ===============================================================
-        private void cleanBufferUpTo (Iterator<Byte> end) {
-    
+
+    } // processFrame ()
+      // ===============================================================
+
+    // ===============================================================
+    private void cleanBufferUpTo(Iterator<Byte> end) {
+
         Iterator<Byte> i = byteBuffer.iterator();
         while (i.hasNext() && i != end) {
             i.next();
             i.remove();
         }
-    
-        }
-        // ===============================================================
-    
-    
-    
-        // ===============================================================
-        // DATA MEMBERS
-        // ===============================================================
-    
+
+    }
+    // ===============================================================
+
+    // ===============================================================
+    // DATA MEMBERS
+    // ===============================================================
+
 }

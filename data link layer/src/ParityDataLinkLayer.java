@@ -9,13 +9,12 @@ public class ParityDataLinkLayer extends DataLinkLayer {
     private static final byte startTag = (byte) '{';
     private static final byte stopTag = (byte) '}';
     private static final byte escapeTag = (byte) '\\';
-
+    private static final boolean logging = false;
     @Override
     protected byte[] createFrame(byte[] data) {
         // TODO Auto-generated method stub
         Queue<Byte> framingData = new LinkedList<Byte>(); // Create queue of frames
 
-        //System.out.println("<start>");
         framingData.add(startTag); // add start tag
         int numOnesInFrame = 0; // keeps track of number of ones in the frame
 
@@ -26,31 +25,23 @@ public class ParityDataLinkLayer extends DataLinkLayer {
                 framingData.add(escapeTag); // add escape tag
                 numOnesInFrame -= Integer.bitCount(data[i] & 0xff); // don't include escape tag in parity.
             }
-            // System.out.printf("%c", data[i]);
-            // System.out.printf("%d%n", numOnesInFrame);
 
             framingData.add(data[i]); // add data to the frame
 
             if ((i + 1) % 8 == 0) { // ensure every frame is only 8 bytes long
                 byte parityByte = (byte) (numOnesInFrame % 2); // find parity
-                // System.out.printf("%d%n", parityByte);
-                // System.out.printf("<stop>%n");
                 framingData.add(parityByte); // add parity byte
                 framingData.add(stopTag); // add stop tag
                 framingData.add(startTag); // add start tag
-                // System.out.printf("<start>%n");
                 numOnesInFrame = 0;
 
             }
         }
 
         if (framingData.size() != 0) {
-            // System.out.println("Handling remainder of frame");
             framingData.add((byte) (numOnesInFrame % 2)); // add parity byte
-            // System.out.printf("%d%n", (byte) (numOnesInFrame % 2) );
 
             framingData.add(stopTag);
-            // System.out.printf("<stop>%n");
         }
         // convert framed data queue to byte array
 
@@ -67,7 +58,9 @@ public class ParityDataLinkLayer extends DataLinkLayer {
     protected byte[] processFrame() {
 
         Logger logger = Logger.getLogger("ProcessFrame");
-
+        if (!logging){
+            logger.setLevel(Level.OFF);
+        }
         // Search for a start tag. Discard anything prior to it.
         boolean startTagFound = false;
         Iterator<Byte> i = byteBuffer.iterator();
@@ -104,7 +97,7 @@ public class ParityDataLinkLayer extends DataLinkLayer {
             if (current == escapeTag) {
                 if (i.hasNext()) {
                     current = i.next(); // current = the byte after the escape tag.
-                    if (byteCount > 8 && current != stopTag) { // checks that frame is only 8 bytes long
+                    if (byteCount > 8) { // checks that frame is only 8 bytes long
                         logger.log(Level.SEVERE, "FRAME GREATER THAN 8 BYTES"); // log error
                         return null; // return null
                     }
@@ -144,8 +137,6 @@ public class ParityDataLinkLayer extends DataLinkLayer {
             for (int j = 0; j < extractedBytesArr.length; j++) { // fill array
                 extractedBytesArr[j] = iter.next();
                 countNumOnesInFrame += Integer.bitCount(extractedBytesArr[j] & 0xff);
-                // System.out.printf("%c", extractedBytesArr[j]);
-                // System.out.printf("%d%n", numOnesInFrame);
             }
 
             byte parityByte = iter.next(); // parityByte would be the only remaining byte

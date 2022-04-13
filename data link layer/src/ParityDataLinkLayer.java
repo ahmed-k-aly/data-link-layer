@@ -3,7 +3,14 @@ import java.util.LinkedList;
 import java.util.Queue;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-
+/**
+ * @file ParityDataLinkLayer.java
+ * @author Ahmed Aly
+ * @date   March, 2022
+ *
+ * Frames the data passed into the data link layer and uses a parity check to 
+ * evaluate the data's accuracy when processing it
+**/
 public class ParityDataLinkLayer extends DataLinkLayer {
     // The start tag, stop tag, and the escape tag.
     private static final byte startTag = (byte) '{';
@@ -184,10 +191,5 @@ public class ParityDataLinkLayer extends DataLinkLayer {
         }
 
     }
-    // ===============================================================
-
-    // ===============================================================
-    // DATA MEMBERS
-    // ===============================================================
-
+    
 }
